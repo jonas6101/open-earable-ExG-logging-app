@@ -30,10 +30,11 @@ import java.io.OutputStreamWriter
 @Composable
 fun FingerTappingTask() {
     val context = LocalContext.current
+    val currentTime = getCurrentTime()
 
     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
         Button(onClick = {
-            val currentTime = getCurrentTime()
+
             logTimeToCsv(context = context, "test.csv", "$currentTime\n")
         }, modifier = Modifier.fillMaxSize()) {
             Text("Tap")
