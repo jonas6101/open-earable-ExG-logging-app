@@ -16,20 +16,24 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             SleepOnsetTrackingTheme {
-            val navController = rememberNavController()
-            NavHost(
-                navController = navController,
-                startDestination = Start
-            ) {
-                composable<Start> {
-                    StartScreen(onNavigateToFTT = {navController.navigate(route = FingerTappingTask)},
-                        onNavigateToBT = {navController.navigate(route = FingerTappingTask)})
 
+                val bleViewmodel = BLEViewmodel()
+                val navController = rememberNavController()
+
+                NavHost(
+                    navController = navController,
+                    startDestination = Start
+                ) {
+                    composable<Start> {
+                        StartScreen(
+                            bleViewmodel = bleViewmodel,
+                            onNavigateToFTT = { navController.navigate(route = FingerTappingTask) },
+                            onNavigateToBT = { navController.navigate(route = FingerTappingTask) })
+                    }
+                    composable<FingerTappingTask> {
+                        FingerTappingTask(bleViewmodel)
+                    }
                 }
-                composable<FingerTappingTask> {
-                    FingerTappingTask()
-                }
-            }
 
             }
         }
