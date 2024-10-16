@@ -107,7 +107,7 @@ fun StartScreen(
 
                 //Connected Button
                 Button(
-                    onClick = { bleViewmodel.startScan("") },
+                    onClick = { bleViewmodel.startScan("OpenEarable-57C7") },
                     Modifier
                         .padding(top = 100.dp)
                         .matchParentSize()

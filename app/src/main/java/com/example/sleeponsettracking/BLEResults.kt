@@ -12,5 +12,5 @@ sealed class BLEState {
 
 sealed class BLEData {
     object NoData : BLEData()  // When no data is available yet
-    data class DataReceived(val data: List<Byte>) : BLEData()
+    data class DataReceived(val data: ByteArray) : BLEData()
 }

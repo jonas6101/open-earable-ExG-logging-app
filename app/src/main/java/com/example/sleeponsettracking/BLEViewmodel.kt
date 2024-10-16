@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class BLEViewmodel() : ViewModel() {
 
@@ -35,7 +36,6 @@ class BLEViewmodel() : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _bleState.value = BLEState.Scanning
             try {
-                Log.d("test", "_______")
                 val advertisement = Scanner {
                     filters {
                         match {
@@ -80,14 +80,14 @@ class BLEViewmodel() : ViewModel() {
                 // Discover services
                 val services = p.services ?: error("Services have not been discovered")
                 val characteristic = services
-                    .first { it.serviceUuid == uuidFrom("00001815-0000-1000-8000-00805f9b34fb") }
+                    .first { it.serviceUuid == UUID.fromString("0029d054-23d0-4c58-a199-c6bdc16c4975") }
                     .characteristics
-                    .first { it.characteristicUuid == uuidFrom("00002a56-0000-1000-8000-00805f9b34fb") }
+                    .first { it.characteristicUuid == UUID.fromString("20a4a273-c214-4c18-b433-329f30ef7275") }
 
                 // Start observing characteristic notifications
                 p.observe(characteristic).collect { data ->
                     // Update the EEG data in the MutableStateFlow
-                    _bleData.value = BLEData.DataReceived(data.toList())
+                    _bleData.value = BLEData.DataReceived(data)
                 }
 
             } catch (e: Exception) {
@@ -95,6 +95,5 @@ class BLEViewmodel() : ViewModel() {
                 _bleState.value = BLEState.Error(e.message ?: "Unknown error during connection")
             }
         }
-
     }
 }
