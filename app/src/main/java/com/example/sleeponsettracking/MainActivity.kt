@@ -27,11 +27,11 @@ class MainActivity : ComponentActivity() {
                     composable<Start> {
                         StartScreen(
                             bleViewmodel = bleViewmodel,
-                            onNavigateToFTT = { navController.navigate(route = FingerTappingTask) },
-                            onNavigateToBT = { navController.navigate(route = FingerTappingTask) })
+                            onNavigateToRecording = { navController.navigate(route = Recording) })
                     }
-                    composable<FingerTappingTask> {
-                        FingerTappingTask(bleViewmodel)
+
+                    composable<Recording> {
+                        Recording(bleViewmodel)
                     }
                 }
 
@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Serializable
-object FingerTappingTask
+object Recording
 
 @Serializable
 object Start

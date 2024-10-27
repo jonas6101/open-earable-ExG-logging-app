@@ -6,8 +6,6 @@ import android.os.Environment
 import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,28 +14,27 @@ import android.content.ContextWrapper
 import android.database.Cursor
 import android.provider.MediaStore
 import androidx.compose.foundation.background
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.example.sleeponsettracking.ui.theme.Purple40
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 @Composable
-fun FingerTappingTask(bleViewmodel: BLEViewmodel) {
+fun Recording(bleViewmodel: BLEViewmodel) {
     val context = LocalContext.current
 
     // Observe the bleData state from the ViewModel
@@ -94,7 +91,7 @@ fun FingerTappingTask(bleViewmodel: BLEViewmodel) {
                 val rawData = (floatValue / inampGain) * 1e6
 
                 // Apply filtering if enabled
-                val filteredData = rawData // Call to your filter logic TODO: implement filter
+                val filteredData = rawData // Call to your filter logic TODO: implement filter here
 
 
                 // Format the timestamp for logging
@@ -118,20 +115,7 @@ fun FingerTappingTask(bleViewmodel: BLEViewmodel) {
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            Button(
-                onClick = {
-                    val currentTime = Calendar.getInstance().time
-                    logToCsv(context = context, "tapping_log.csv", "$currentTime\n")
-                }, modifier = Modifier.fillMaxSize(), colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF232323),  // Set the background color of the button
-                    contentColor = Purple40,    // Set the content (text/icon) color
-                    disabledContainerColor = Color.Black,  // Color when the button is disabled
-                    disabledContentColor = Color.Black // Content color when disabled
-                )
-            )
-            {
-                Text("Tap")
-            }
+            Text("Your data is being recorded. Please do not lock the phone!", color = Color.DarkGray, textAlign = TextAlign.Center)
         }
     }
 

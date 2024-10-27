@@ -41,10 +41,8 @@ import com.example.sleeponsettracking.ui.theme.SleepOnsetTrackingTheme
 @Composable
 fun StartScreen(
     bleViewmodel: BLEViewmodel,
-    onNavigateToFTT: () -> Unit,
-    onNavigateToBT: () -> Unit
+    onNavigateToRecording: () -> Unit
 ) {
-
     val connectionState by bleViewmodel.bleState.collectAsState()
 
     Scaffold(
@@ -121,8 +119,8 @@ fun StartScreen(
             }
 
             Box(Modifier.size(150.dp, 150.dp), Alignment.TopCenter) {
-                Button(onClick = onNavigateToFTT, Modifier.matchParentSize()) {
-                    Text("Start FTT")
+                Button(onClick = onNavigateToRecording, Modifier.matchParentSize()) {
+                    Text("Start Recording")
                 }
             }
         }
