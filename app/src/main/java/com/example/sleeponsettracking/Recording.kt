@@ -41,6 +41,14 @@ fun Recording(bleViewmodel: BLEViewmodel) {
     val bleData by bleViewmodel.bleData.collectAsState()
 
     DisposableEffect(Unit) {
+        bleViewmodel.setRecordingScreenActive(true)
+        onDispose {
+            bleViewmodel.setRecordingScreenActive(false)
+        }
+    }
+
+
+    DisposableEffect(Unit) {
         val window = context.findActivity()?.window ?: return@DisposableEffect onDispose {}
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
 
@@ -59,137 +67,126 @@ fun Recording(bleViewmodel: BLEViewmodel) {
         }
     }
 
+    /*
     // Write the Bluetooth data to CSV whenever it's received
     LaunchedEffect(bleData) {
+
         if (bleData is BLEData.DataReceived) {
-            val sampleRate = 256  // Replace with your actual sample rate
-            val inampGain = 50     // Replace with your actual amplifier gain
-            var lastValidTimestamp: Date? = null
-            val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) // Timestamp format
-
+            val dateFormat =
+                SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) // Timestamp format
             // Unpack the BLE data (assuming it's in ByteArray format)
-            val byteBuffer = ByteBuffer.wrap((bleData as BLEData.DataReceived).data).order(ByteOrder.LITTLE_ENDIAN)
+            val byteBuffer = ByteBuffer.wrap((bleData as BLEData.DataReceived).data)
+                .order(ByteOrder.LITTLE_ENDIAN)
             val readings = FloatArray(5) { byteBuffer.getFloat() } // Assuming 5 float values
-
             val currentTimestamp = Date() // Current time for the notification
 
-            // Calculate timestamps for each reading
-            if (lastValidTimestamp == null) {
-                lastValidTimestamp = Date(currentTimestamp.time - (5 * 1000L / sampleRate)) // Initial timestamp calculation
-            }
 
-            readings.forEachIndexed { index, floatValue ->
-                // Calculate the timestamp for each reading
-                val timestampForFloatValue: Date = if (index == 4) {
-                    currentTimestamp
-                } else {
-                    val timeDiff = (currentTimestamp.time - lastValidTimestamp!!.time) / 5
-                    Date(lastValidTimestamp!!.time + (index + 1) * timeDiff)
-                }
-
-                // Convert the data to µV
-                val rawData = (floatValue / inampGain) * 1e6
-
-                // Apply filtering if enabled
-                val filteredData = rawData // Call to your filter logic TODO: implement filter here
+            // Calculate the timestamp for each reading
 
 
-                // Format the timestamp for logging
-                val formattedTimestamp = dateFormat.format(timestampForFloatValue)
+            // Convert the data to µV
+            val rawData = readings.joinToString(",")
 
-                // Create a log entry in CSV format: "timestamp, raw_data, filtered_data"
-                val logEntry = "$formattedTimestamp,$rawData,$filteredData\n"
+            // Format the timestamp for logging
+            val formattedTimestamp = dateFormat.format(currentTimestamp)
 
-                // Use the logToCsv function to append the data to a CSV file
-                logToCsv(context, "OpenEarableEEG_BLE.csv", logEntry)
-            }
+            // Create a log entry in CSV format: "timestamp, raw_data, filtered_data"
+            val logEntry = "$formattedTimestamp,$rawData\n"
+            Log.d("fuck", logEntry)
+            // Use the logToCsv function to append the data to a CSV file
+            logToCsv(context, "OpenEarableEEG_BLE.csv", logEntry)
 
-            // Update the last valid timestamp for the next BLE notification
-            lastValidTimestamp = currentTimestamp
-            }
-        }
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
-            Text("Your data is being recorded. Please do not lock the phone!", color = Color.DarkGray, textAlign = TextAlign.Center)
         }
     }
+    *
+     */
 
-    // Function to log the current time to a CSV file in the global Documents directory
-    fun logToCsv(context: Context, fileName: String, logEntry: String) {
-        try {
-            val resolver = context.contentResolver
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        Text(
+            "Your data is being recorded. Please do not lock the phone!",
+            color = Color.DarkGray,
+            textAlign = TextAlign.Center
+        )
+    }
+}
 
-            // Check if the file already exists
-            val existingUri = findFileInDocuments(resolver, fileName)
+// Function to log the current time to a CSV file in the global Documents directory
+fun logToCsv(context: Context, fileName: String, logEntry: String) {
+    try {
+        val resolver = context.contentResolver
 
-            if (existingUri != null) {
-                // If file exists, append to it
-                resolver.openOutputStream(existingUri, "wa")?.use { outputStream ->
+        // Check if the file already exists
+        val existingUri = findFileInDocuments(resolver, fileName)
+
+        if (existingUri != null) {
+            // If file exists, append to it
+            resolver.openOutputStream(existingUri, "wa")?.use { outputStream ->
+                BufferedWriter(OutputStreamWriter(outputStream)).use { writer ->
+                    writer.write(logEntry)
+                }
+            }
+        } else {
+            // If file does not exist, create a new file and write the first log entry
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.Files.FileColumns.MIME_TYPE, "text/csv")
+                put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
+            }
+
+            val newUri =
+                resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+            newUri?.let {
+                resolver.openOutputStream(it)?.use { outputStream ->
                     BufferedWriter(OutputStreamWriter(outputStream)).use { writer ->
                         writer.write(logEntry)
                     }
                 }
-            } else {
-                // If file does not exist, create a new file and write the first log entry
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.Files.FileColumns.MIME_TYPE, "text/csv")
-                    put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
-                }
-
-                val newUri =
-                    resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
-                newUri?.let {
-                    resolver.openOutputStream(it)?.use { outputStream ->
-                        BufferedWriter(OutputStreamWriter(outputStream)).use { writer ->
-                            writer.write(logEntry)
-                        }
-                    }
-                } ?: run {
-                    Log.e("CSVLogError", "Failed to create CSV file URI")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("CSVLogError", "Error logging time to CSV", e)
-        }
-    }
-
-    // Function to find an existing file in the Documents directory
-    fun findFileInDocuments(
-        resolver: android.content.ContentResolver,
-        fileName: String
-    ): android.net.Uri? {
-        val projection =
-            arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME)
-        val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} = ?"
-        val selectionArgs = arrayOf(fileName)
-
-        resolver.query(
-            MediaStore.Files.getContentUri("external"),
-            projection,
-            selection,
-            selectionArgs,
-            null
-        )?.use { cursor: Cursor? ->
-            if (cursor != null && cursor.moveToFirst()) {
-                val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-                val fileId = cursor.getLong(idIndex)
-                return MediaStore.Files.getContentUri("external", fileId)
+            } ?: run {
+                Log.e("CSVLogError", "Failed to create CSV file URI")
             }
         }
-        return null
+    } catch (e: Exception) {
+        Log.e("CSVLogError", "Error logging time to CSV", e)
     }
+}
 
-    fun Context.findActivity(): Activity? {
-        var context = this
-        while (context is ContextWrapper) {
-            if (context is Activity) return context
-            context = context.baseContext
+// Function to find an existing file in the Documents directory
+fun findFileInDocuments(
+    resolver: android.content.ContentResolver,
+    fileName: String
+): android.net.Uri? {
+    val projection =
+        arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME)
+    val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} = ?"
+    val selectionArgs = arrayOf(fileName)
+
+    resolver.query(
+        MediaStore.Files.getContentUri("external"),
+        projection,
+        selection,
+        selectionArgs,
+        null
+    )?.use { cursor: Cursor? ->
+        if (cursor != null && cursor.moveToFirst()) {
+            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+            val fileId = cursor.getLong(idIndex)
+            return MediaStore.Files.getContentUri("external", fileId)
         }
-        return null
     }
+    return null
+}
+
+fun Context.findActivity(): Activity? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) return context
+        context = context.baseContext
+    }
+    return null
+}
