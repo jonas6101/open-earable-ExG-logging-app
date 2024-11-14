@@ -35,6 +35,7 @@ import java.io.OutputStreamWriter
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -48,6 +49,9 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) // Timestamp format
     private val logBuffer = mutableListOf<String>()
     private val batchInterval = 1000L // Write every 1000 ms (1 second)
+
+    private var currentFileName: String = generateFileName()
+    private var lastFileHour: Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
 
     // State to track incoming data from BLE device
     private val _bleData = MutableStateFlow<BLEData>(BLEData.NoData)
@@ -72,11 +76,23 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
                 delay(batchInterval)
+                // Check if the hour has changed
+                val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+                if (currentHour != lastFileHour) {
+                    currentFileName = generateFileName() // Update file name for the new hour
+                    lastFileHour = currentHour
+                }
                 if (logBuffer.isNotEmpty()) {
-                    flushBufferToCsv(context)
+                    flushBufferToCsv(context, currentFileName)
                 }
             }
         }
+    }
+
+    // Generate a file name based on the current hour
+    private fun generateFileName(): String {
+        val dateTime = SimpleDateFormat("yyyy-MM-dd_HH", Locale.getDefault()).format(Date())
+        return "OpenEarableEEG_$dateTime.csv"
     }
 
     // Toggle this flag when the recording screen is opened or closed
@@ -173,13 +189,13 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
     }
 
     // Flush the buffer to the CSV file
-    private fun flushBufferToCsv(context: Context) {
+    private fun flushBufferToCsv(context: Context, fileName: String) {
         try {
             val logEntries = logBuffer.toList() // Take a snapshot of the current buffer
             logBuffer.clear() // Clear the buffer before writing to avoid blocking new entries
 
             logEntries.forEach { logEntry ->
-                logToCsv(context, "OpenEarableEEG_BLE.csv", logEntry)
+                logToCsv(context, fileName, logEntry)
             }
         } catch (e: Exception) {
             Log.e("CSVLogError", "Error flushing logs to CSV", e)

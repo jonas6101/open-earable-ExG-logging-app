@@ -82,24 +82,24 @@ fun StartScreen(
                         )
                     }
                     is BLEState.Scanning -> {
-                        Text(text = "Scanning...",Modifier.padding(top = 40.dp), textAlign = TextAlign.Center)
+                        Text(text = "Scanning...",Modifier.padding(top = 40.dp), textAlign = TextAlign.Center, color = Color.White)
                         CircularProgressIndicator()
                     }
                     is BLEState.DeviceFound -> {
-                        Text(text = "Device Found",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center)
+                        Text(text = "Device Found",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
                     }
                     is BLEState.Connecting -> {
-                        Text(text = "Connecting...",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center)
+                        Text(text = "Connecting...",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
                         CircularProgressIndicator()
                     }
                     is BLEState.Connected -> {
-                        Text(text = "Connected",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center)
+                        Text(text = "Connected",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
                     }
                     is BLEState.Disconnected -> {
-                        Text(text = "Disconnected",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center)
+                        Text(text = "Disconnected",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
                     }
                     is BLEState.Error -> {
-                        Text(text = "Error: ${(connectionState as BLEState.Error).message}",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center)
+                        Text(text = "Error: ${(connectionState as BLEState.Error).message}",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
                     }}
 
 
