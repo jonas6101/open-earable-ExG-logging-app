@@ -155,7 +155,9 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
                 // Start observing characteristic notifications
                 p.observe(characteristic).collect { data ->
                     if (_isRecordingScreenActive.value) {
-                        bleDataChannel.trySend(BLEData.DataReceived(data))
+                        val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+                        val currentTime = dateFormat.format(Date())
+                        bleDataChannel.trySend(BLEData.DataReceived(data, currentTime))
                     }
                 }
 
@@ -170,8 +172,7 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
         val byteBuffer = ByteBuffer.wrap(bleData.data).order(ByteOrder.LITTLE_ENDIAN)
         val readings = FloatArray(5) { byteBuffer.getFloat() }
         val rawData = readings.joinToString(",")
-        val formattedTimestamp = dateFormat.format(Date())
-        val logEntry = "$formattedTimestamp,$rawData\n"
+        val logEntry = "${bleData.timestamp},$rawData\n"
 
         logBuffer.add(logEntry)
     }
