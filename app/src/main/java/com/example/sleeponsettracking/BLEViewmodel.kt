@@ -4,6 +4,7 @@ package com.example.sleeponsettracking
 import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
+import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
@@ -49,9 +50,10 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) // Timestamp format
     private val logBuffer = mutableListOf<String>()
     private val batchInterval = 1000L // Write every 1000 ms (1 second)
+    private val maxEntriesPerFile = 20000 // Maximum entries per file
 
     private var currentFileName: String = generateFileName()
-    private var lastFileHour: Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    private var fileEntryCount: Int = 0 // Track the number of entries written to the current file
 
     // State to track incoming data from BLE device
     private val _bleData = MutableStateFlow<BLEData>(BLEData.NoData)
@@ -76,23 +78,17 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
                 delay(batchInterval)
-                // Check if the hour has changed
-                val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-                if (currentHour != lastFileHour) {
-                    currentFileName = generateFileName() // Update file name for the new hour
-                    lastFileHour = currentHour
-                }
                 if (logBuffer.isNotEmpty()) {
-                    flushBufferToCsv(context, currentFileName)
+                    flushBufferToCsv(context)
                 }
             }
         }
     }
 
-    // Generate a file name based on the current hour
+    // Generate a file name based on the current time
     private fun generateFileName(): String {
-        val dateTime = SimpleDateFormat("yyyy-MM-dd_HH", Locale.getDefault()).format(Date())
-        return "OpenEarableEEG_$dateTime.csv"
+        val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
+        return "OpenEarableEEG_$timestamp.csv"
     }
 
     // Toggle this flag when the recording screen is opened or closed
@@ -122,10 +118,9 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
         }
     }
 
-    fun connectToDevice(advertisement : Advertisement) {
+    fun connectToDevice(advertisement: Advertisement) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-
                 _bleState.value = BLEState.Connecting
 
                 val p = peripheral(advertisement) {
@@ -135,14 +130,13 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
                     phy = Phy.Le2M
                 }
 
-                // Observe connection stat
-                p.let { l ->
+                // Observe connection state
+                p.let { peripheral ->
                     viewModelScope.launch {
-                        l.state.collect { state ->
-                            if(state == com.juul.kable.State.Connected) {
-                                _bleState.value = BLEState.Connected
-                            }else{
-                                _bleState.value = BLEState.Disconnected
+                        peripheral.state.collect { state ->
+                            _bleState.value = when (state) {
+                                com.juul.kable.State.Connected -> BLEState.Connected
+                                else -> BLEState.Disconnected
                             }
                         }
                     }
@@ -161,17 +155,11 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
                 // Start observing characteristic notifications
                 p.observe(characteristic).collect { data ->
                     if (_isRecordingScreenActive.value) {
-                        val channelResult = bleDataChannel.trySend(BLEData.DataReceived(data))
-                        // Convert ByteArray to a comma-separated decimal string
-                        val byteBuffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
-                        val readings = FloatArray(5) { byteBuffer.getFloat() }
-                        val rawData = readings.joinToString(",")
-                        Log.d("channel", rawData)
+                        bleDataChannel.trySend(BLEData.DataReceived(data))
                     }
                 }
 
             } catch (e: Exception) {
-                // Handle any errors in connection, discovery, or observation
                 _bleState.value = BLEState.Error(e.message ?: "Unknown error during connection")
             }
         }
@@ -189,66 +177,62 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
     }
 
     // Flush the buffer to the CSV file
-    private fun flushBufferToCsv(context: Context, fileName: String) {
+    private fun flushBufferToCsv(context: Context) {
         try {
+            prepareFile(context)
+
             val logEntries = logBuffer.toList() // Take a snapshot of the current buffer
             logBuffer.clear() // Clear the buffer before writing to avoid blocking new entries
 
-            logEntries.forEach { logEntry ->
-                logToCsv(context, fileName, logEntry)
+            val resolver = context.contentResolver
+            val fileUri = findFileInDocuments(resolver, currentFileName) ?: createNewFile(context, currentFileName)
+
+            fileUri?.let { uri ->
+                resolver.openOutputStream(uri, "wa")?.use { outputStream ->
+                    BufferedWriter(OutputStreamWriter(outputStream)).use { writer ->
+                        logEntries.forEach { logEntry ->
+                            writer.write(logEntry)
+                            fileEntryCount++
+
+                            // Create a new file if the entry limit is reached
+                            if (fileEntryCount >= maxEntriesPerFile) {
+                                currentFileName = generateFileName()
+                                fileEntryCount = 0
+                            }
+                        }
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e("CSVLogError", "Error flushing logs to CSV", e)
         }
     }
 
-    // Function to log the current time to a CSV file in the global Documents directory
-    fun logToCsv(context: Context, fileName: String, logEntry: String) {
-        try {
-            val resolver = context.contentResolver
-
-            // Check if the file already exists
-            val existingUri = findFileInDocuments(resolver, fileName)
-
-            if (existingUri != null) {
-                // If file exists, append to it
-                resolver.openOutputStream(existingUri, "wa")?.use { outputStream ->
-                    BufferedWriter(OutputStreamWriter(outputStream)).use { writer ->
-                        writer.write(logEntry)
-                    }
-                }
-            } else {
-                // If file does not exist, create a new file and write the first log entry
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName)
-                    put(MediaStore.Files.FileColumns.MIME_TYPE, "text/csv")
-                    put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
-                }
-
-                val newUri =
-                    resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
-                newUri?.let {
-                    resolver.openOutputStream(it)?.use { outputStream ->
-                        BufferedWriter(OutputStreamWriter(outputStream)).use { writer ->
-                            writer.write(logEntry)
-                        }
-                    }
-                } ?: run {
-                    Log.e("CSVLogError", "Failed to create CSV file URI")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("CSVLogError", "Error logging time to CSV", e)
+    // Prepare the file for writing
+    private fun prepareFile(context: Context) {
+        if (fileEntryCount == 0 || findFileInDocuments(context.contentResolver, currentFileName) == null) {
+            currentFileName = generateFileName()
+            fileEntryCount = 0
         }
     }
 
+    // Function to log to a CSV file
+    private fun createNewFile(context: Context, fileName: String): Uri? {
+        val resolver = context.contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.Files.FileColumns.MIME_TYPE, "text/csv")
+            put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
+        }
+        return resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+    }
+
     // Function to find an existing file in the Documents directory
-    fun findFileInDocuments(
+    private fun findFileInDocuments(
         resolver: android.content.ContentResolver,
         fileName: String
     ): android.net.Uri? {
-        val projection =
-            arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME)
+        val projection = arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME)
         val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} = ?"
         val selectionArgs = arrayOf(fileName)
 

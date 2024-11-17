@@ -38,7 +38,7 @@ fun Recording(bleViewmodel: BLEViewmodel) {
     val context = LocalContext.current
 
     // Observe the bleData state from the ViewModel
-    val bleData by bleViewmodel.bleData.collectAsState()
+
 
     DisposableEffect(Unit) {
         bleViewmodel.setRecordingScreenActive(true)
