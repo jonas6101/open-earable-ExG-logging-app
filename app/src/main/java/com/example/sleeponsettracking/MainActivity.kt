@@ -1,5 +1,8 @@
 package com.example.sleeponsettracking
 
+import USBViewModel
+import android.content.Context
+import android.hardware.usb.UsbManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,21 +21,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             SleepOnsetTrackingTheme {
                 val context = LocalContext.current
-                val bleViewmodel = BLEViewmodel(context)
-                val navController = rememberNavController()
+                val usbViewModel = USBViewModel(context)
+                val bleViewModel = BLEViewmodel(context)
 
+                val navController = rememberNavController()
+                val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
                 NavHost(
                     navController = navController,
                     startDestination = Start
                 ) {
                     composable<Start> {
                         StartScreen(
-                            bleViewmodel = bleViewmodel,
+                            bleViewmodel = bleViewModel,
                             onNavigateToRecording = { navController.navigate(route = Recording) })
                     }
 
                     composable<Recording> {
-                        Recording(bleViewmodel)
+                        Recording(usbViewModel, usbManager)
                     }
                 }
 

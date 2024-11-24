@@ -81,7 +81,7 @@ fun StartScreen(
                             contentScale = ContentScale.Fit
                         )
                     }
-                    is BLEState.Scanning -> {
+                    BLEState.Scanning -> {
                         Text(text = "Scanning...",Modifier.padding(top = 40.dp), textAlign = TextAlign.Center, color = Color.White)
                         CircularProgressIndicator()
                     }
@@ -95,12 +95,15 @@ fun StartScreen(
                     is BLEState.Connected -> {
                         Text(text = "Connected",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
                     }
+
                     is BLEState.Disconnected -> {
                         Text(text = "Disconnected",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
                     }
+
                     is BLEState.Error -> {
                         Text(text = "Error: ${(connectionState as BLEState.Error).message}",Modifier.padding(top = 20.dp), textAlign = TextAlign.Center, color = Color.White)
-                    }}
+                    }
+                }
 
 
                 //Connected Button
