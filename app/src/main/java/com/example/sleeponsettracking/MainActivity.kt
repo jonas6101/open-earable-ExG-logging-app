@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable<Recording> {
-                        Recording(usbViewModel, usbManager)
+                        com.example.sleeponsettracking.Recording(usbViewModel, usbManager)
                     }
                 }
 

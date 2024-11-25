@@ -1,7 +1,14 @@
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
-import android.util.Log
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hoho.android.usbserial.driver.UsbSerialPort
@@ -11,9 +18,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -21,107 +32,272 @@ import java.util.concurrent.Executors
 
 class USBViewModel(private val context: Context) : ViewModel() {
 
-    private val _isLogging = MutableStateFlow(false)
-    val isLogging: StateFlow<Boolean> = _isLogging
+    private val USB_PERMISSION_ACTION = "com.example.sleeponsettracking.USB_PERMISSION"
 
-    private val usbDataChannel = Channel<String>(Channel.UNLIMITED)
+    private val _isLoggingActive = MutableStateFlow(false)
+    val isLoggingActive: StateFlow<Boolean> = _isLoggingActive.asStateFlow()
+
+    private val usbDataChannel = Channel<USBData.DataReceived>(Channel.UNLIMITED)
+    private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
     private val logBuffer = mutableListOf<String>()
-    private val batchInterval = 1000L // Buffer flush interval
-    private val maxEntriesPerFile = 20000 // Max entries per file
+    private val dataBuffer = mutableListOf<String>()
+    private val batchInterval = 1000L // 1 second for periodic log flushing
+    private val maxEntriesPerFile = 20000 // Maximum entries per file
 
-    private var currentFileName: String = generateFileName()
-    private var fileEntryCount = 0
+    private var currentDataFileName: String = generateFileName("USB_Data")
+    private var currentLogFileName: String = generateFileName("App_Logs")
+    private var fileEntryCount: Int = 0
     private var serialPort: UsbSerialPort? = null
+    private var serialInputOutputManager: SerialInputOutputManager? = null
+
+    private val usbPermissionReceiver: BroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (USB_PERMISSION_ACTION == intent.action) {
+                val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+                val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+
+                if (granted) {
+                    appendLog("Permission granted for USB device: ${device?.deviceName}")
+                } else {
+                    appendLog("Permission denied for USB device")
+                }
+            }
+        }
+    }
 
     init {
+        // Register the BroadcastReceiver with RECEIVER_NOT_EXPORTED
+        val filter = IntentFilter(USB_PERMISSION_ACTION)
+        ContextCompat.registerReceiver(
+            context,
+            usbPermissionReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        // Request USB permission early
+        val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+        requestUsbPermission(usbManager)
+
+        // Start a background coroutine to process USB data from the Channel
+        viewModelScope.launch(Dispatchers.IO) {
+            usbDataChannel.receiveAsFlow().collect { usbData ->
+                if (_isLoggingActive.value) {
+                    processAndBatchData(usbData)
+                }
+            }
+        }
+
+        // Start periodic log flushing
         startPeriodicLogFlushing()
+    }
+
+    fun requestUsbPermission(usbManager: UsbManager) {
+        val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
+
+        if (availableDrivers.isEmpty()) {
+            appendLog("No USB drivers found")
+            return
+        }
+
+        val driver = availableDrivers.first()
+        val device = driver.device
+
+        if (!usbManager.hasPermission(device)) {
+            val permissionIntent = PendingIntent.getBroadcast(
+                context,
+                0,
+                Intent(USB_PERMISSION_ACTION),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            usbManager.requestPermission(device, permissionIntent)
+            appendLog("Requested permission for USB device")
+        } else {
+            appendLog("USB permission already granted")
+        }
     }
 
     fun startLogging(usbManager: UsbManager) {
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
 
         if (availableDrivers.isEmpty()) {
-            Log.e("USBViewModel", "No USB device found")
+            appendLog("No USB drivers found")
             return
+        }
+        appendLog("Found ${availableDrivers.size} USB driver(s)")
+        availableDrivers.forEach { driver ->
+            val device = driver.device
+            appendLog(
+                """
+        USB Device:
+        Name: ${device.deviceName}
+        Vendor ID: ${device.vendorId}
+        Product ID: ${device.productId}
+        Class: ${device.deviceClass}
+        Subclass: ${device.deviceSubclass}
+        Interface Count: ${device.interfaceCount}
+        """.trimIndent()
+            )
+
+            // Log all ports for this driver
+            val ports = driver.ports
+            appendLog("Port Count: ${ports.size}")
+            ports.forEachIndexed { index, port ->
+                appendLog("Port $index: ${port.javaClass.simpleName}")
+            }
         }
 
         val driver = availableDrivers.first()
-        val connection = usbManager.openDevice(driver.device)
-        serialPort = driver.ports.first()
+        val device = driver.device
 
-        if (connection == null) {
-            Log.e("USBViewModel", "Failed to open connection")
+        if (!usbManager.hasPermission(device)) {
+            appendLog("Permission not granted. Cannot start logging.")
             return
         }
 
-        serialPort?.apply {
-            open(connection)
-            setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+        openUsbDevice(driver, usbManager)
+    }
+
+    private fun openUsbDevice(driver: com.hoho.android.usbserial.driver.UsbSerialDriver, usbManager: UsbManager) {
+        val connection = usbManager.openDevice(driver.device)
+        if (connection == null) {
+            appendLog("Failed to open USB device connection")
+            return
         }
 
-        _isLogging.value = true
+        serialPort = driver.ports.firstOrNull()
+        try {
+            serialPort?.apply {
+                open(connection)
+                setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+                dtr = true
+                rts = true
+            }
 
-        startSerialRead()
+            _isLoggingActive.value = true
+
+            startSerialRead()
+
+        } catch (e: Exception) {
+            appendLog("Failed to open USB device: ${e.message}")
+        }
     }
 
-    fun stopLogging() {
-        _isLogging.value = false
-        serialPort?.close()
-    }
-
-    fun startSerialRead() {
-        val serialInputOutputManager = SerialInputOutputManager(serialPort, object : SerialInputOutputManager.Listener {
+    private fun startSerialRead() {
+        serialInputOutputManager = SerialInputOutputManager(serialPort, object : SerialInputOutputManager.Listener {
             override fun onNewData(data: ByteArray) {
-                // Handle the incoming data
-                val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-                val receivedData = String(data) // Convert bytes to a string if applicable
-                usbDataChannel.trySend("$timestamp, $receivedData")
+                val timestamp = dateFormat.format(Date())
+                val logMessage = "Data received: ${data.joinToString(",")} at $timestamp"
+                appendLog(logMessage) // Log received data for debugging
+                usbDataChannel.trySend(USBData.DataReceived(data, timestamp))
             }
 
             override fun onRunError(e: Exception) {
-                Log.e("SerialIOManager", "Error in Serial InputOutput Manager", e)
+                appendLog("Error in Serial InputOutput Manager: ${e.message}")
             }
-        })
-
-        // Start the Serial InputOutput Manager in a separate thread
-        Executors.newSingleThreadExecutor().submit(serialInputOutputManager)
+        }).also {
+            Executors.newSingleThreadExecutor().submit(it)
+        }
     }
 
+    fun stopLogging() {
+        try {
+            serialInputOutputManager?.stop()
+            serialInputOutputManager = null
+            serialPort?.close()
+            serialPort = null
+            _isLoggingActive.value = false
+            appendLog("Logging stopped successfully.")
+        } catch (e: Exception) {
+            appendLog("Error while stopping logging: ${e.message}")
+        }
+    }
+
+    private fun processAndBatchData(usbData: USBData.DataReceived) {
+        val byteBuffer = ByteBuffer.wrap(usbData.data).order(ByteOrder.LITTLE_ENDIAN)
+        val readings = FloatArray(usbData.data.size / 4) { byteBuffer.getFloat() }
+        val rawData = readings.joinToString(",")
+        val logEntry = "${usbData.timestamp},$rawData\n"
+
+        dataBuffer.add(logEntry)
+    }
 
     private fun startPeriodicLogFlushing() {
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
                 kotlinx.coroutines.delay(batchInterval)
+                if (dataBuffer.isNotEmpty()) {
+                    flushBufferToFile(dataBuffer, currentDataFileName)
+                    dataBuffer.clear()
+                }
                 if (logBuffer.isNotEmpty()) {
-                    flushBufferToCsv()
+                    flushBufferToFile(logBuffer, currentLogFileName)
+                    logBuffer.clear()
                 }
             }
         }
     }
 
-    private fun flushBufferToCsv() {
+    private fun flushBufferToFile(buffer: List<String>, fileName: String) {
         try {
-            val logEntries = logBuffer.toList()
-            logBuffer.clear()
-
-            val file = context.getExternalFilesDir(null)?.resolve(currentFileName) ?: return
-            file.bufferedWriter().use { writer ->
-                logEntries.forEach { entry ->
-                    writer.write(entry)
-                    fileEntryCount++
-                    if (fileEntryCount >= maxEntriesPerFile) {
-                        currentFileName = generateFileName()
-                        fileEntryCount = 0
+            val resolver = context.contentResolver
+            val fileUri = findOrCreateFile(resolver, fileName)
+            fileUri?.let { uri ->
+                resolver.openOutputStream(uri, "wa")?.use { outputStream ->
+                    BufferedWriter(OutputStreamWriter(outputStream)).use { writer ->
+                        buffer.forEach { entry -> writer.write(entry) }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("USBViewModel", "Failed to flush logs to CSV", e)
+            appendLog("Failed to write to file $fileName: ${e.message}")
         }
     }
 
-    private fun generateFileName(): String {
+    private fun findOrCreateFile(resolver: android.content.ContentResolver, fileName: String): android.net.Uri? {
+        val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} = ?"
+        val selectionArgs = arrayOf(fileName)
+        val projection = arrayOf(MediaStore.Files.FileColumns._ID)
+
+        resolver.query(
+            MediaStore.Files.getContentUri("external"),
+            projection,
+            selection,
+            selectionArgs,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID))
+                return MediaStore.Files.getContentUri("external", id)
+            }
+        }
+
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.Files.FileColumns.MIME_TYPE, "text/csv")
+            put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS)
+        }
+
+        return resolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+    }
+
+    private fun generateFileName(prefix: String): String {
         val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
-        return "EEG_Data_$timestamp.csv"
+        return "${prefix}_$timestamp.csv"
+    }
+
+    private fun appendLog(message: String) {
+        val logEntry = "${dateFormat.format(Date())},$message\n"
+        logBuffer.add(logEntry)
+    }
+
+    override fun onCleared() {
+        context.unregisterReceiver(usbPermissionReceiver)
+        super.onCleared()
+    }
+
+    sealed class USBData {
+        data class DataReceived(val data: ByteArray, val timestamp: String) : USBData()
+        object NoData : USBData()
     }
 }
