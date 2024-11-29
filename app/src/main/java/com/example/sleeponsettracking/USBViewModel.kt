@@ -15,11 +15,8 @@ import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
@@ -35,12 +32,13 @@ class USBViewModel(private val context: Context) : ViewModel() {
     private val USB_PERMISSION_ACTION = "com.example.sleeponsettracking.USB_PERMISSION"
 
     private val _isLoggingActive = MutableStateFlow(false)
-    val isLoggingActive: StateFlow<Boolean> = _isLoggingActive.asStateFlow()
+    val isLoggingActive: StateFlow<Boolean> = _isLoggingActive
 
-    private val usbDataChannel = Channel<USBData.DataReceived>(Channel.UNLIMITED)
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
     private val logBuffer = mutableListOf<String>()
     private val dataBuffer = mutableListOf<String>()
+    private val byteBuffer = mutableListOf<Byte>() // Persistent buffer for accumulating bytes
+
     private val batchInterval = 1000L // 1 second for periodic log flushing
     private val maxEntriesPerFile = 20000 // Maximum entries per file
 
@@ -66,7 +64,7 @@ class USBViewModel(private val context: Context) : ViewModel() {
     }
 
     init {
-        // Register the BroadcastReceiver with RECEIVER_NOT_EXPORTED
+        // Register the BroadcastReceiver
         val filter = IntentFilter(USB_PERMISSION_ACTION)
         ContextCompat.registerReceiver(
             context,
@@ -75,28 +73,25 @@ class USBViewModel(private val context: Context) : ViewModel() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
-        // Request USB permission early
-        val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-        requestUsbPermission(usbManager)
-
-        // Start a background coroutine to process USB data from the Channel
-        viewModelScope.launch(Dispatchers.IO) {
-            usbDataChannel.receiveAsFlow().collect { usbData ->
-                if (_isLoggingActive.value) {
-                    processAndBatchData(usbData)
-                }
-            }
-        }
-
         // Start periodic log flushing
         startPeriodicLogFlushing()
     }
 
     fun requestUsbPermission(usbManager: UsbManager) {
+        val devices = usbManager.deviceList
+        if (devices.isEmpty()) {
+            appendLog("No USB devices detected 1")
+        } else {
+            devices.values.forEach { device ->
+                appendLog("Detected USB device: ${device.deviceName}, Vendor ID: ${device.vendorId}, Product ID: ${device.productId}")
+            }
+        }
+
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
 
+
         if (availableDrivers.isEmpty()) {
-            appendLog("No USB drivers found")
+            appendLog("No USB drivers found Request")
             return
         }
 
@@ -121,30 +116,8 @@ class USBViewModel(private val context: Context) : ViewModel() {
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
 
         if (availableDrivers.isEmpty()) {
-            appendLog("No USB drivers found")
+            appendLog("No USB drivers found Start")
             return
-        }
-        appendLog("Found ${availableDrivers.size} USB driver(s)")
-        availableDrivers.forEach { driver ->
-            val device = driver.device
-            appendLog(
-                """
-        USB Device:
-        Name: ${device.deviceName}
-        Vendor ID: ${device.vendorId}
-        Product ID: ${device.productId}
-        Class: ${device.deviceClass}
-        Subclass: ${device.deviceSubclass}
-        Interface Count: ${device.interfaceCount}
-        """.trimIndent()
-            )
-
-            // Log all ports for this driver
-            val ports = driver.ports
-            appendLog("Port Count: ${ports.size}")
-            ports.forEachIndexed { index, port ->
-                appendLog("Port $index: ${port.javaClass.simpleName}")
-            }
         }
 
         val driver = availableDrivers.first()
@@ -175,7 +148,6 @@ class USBViewModel(private val context: Context) : ViewModel() {
             }
 
             _isLoggingActive.value = true
-
             startSerialRead()
 
         } catch (e: Exception) {
@@ -186,10 +158,25 @@ class USBViewModel(private val context: Context) : ViewModel() {
     private fun startSerialRead() {
         serialInputOutputManager = SerialInputOutputManager(serialPort, object : SerialInputOutputManager.Listener {
             override fun onNewData(data: ByteArray) {
-                val timestamp = dateFormat.format(Date())
-                val logMessage = "Data received: ${data.joinToString(",")} at $timestamp"
-                appendLog(logMessage) // Log received data for debugging
-                usbDataChannel.trySend(USBData.DataReceived(data, timestamp))
+                data.forEach { byte ->
+                    if (byte == '\n'.code.toByte()) { // Check for newline
+                        if (byteBuffer.size == 4) { // Process if buffer has exactly 4 bytes
+                            val rawValue = ByteBuffer.wrap(byteBuffer.toByteArray())
+                                .order(ByteOrder.LITTLE_ENDIAN)
+                                .float
+
+                            val timestamp = dateFormat.format(Date())
+                            val logEntry = "$timestamp,$rawValue\n"
+                            dataBuffer.add(logEntry)
+
+                            fileEntryCount++
+                            checkFileRotation()
+                        }
+                        byteBuffer.clear() // Clear buffer
+                    } else {
+                        byteBuffer.add(byte) // Accumulate bytes
+                    }
+                }
             }
 
             override fun onRunError(e: Exception) {
@@ -213,15 +200,6 @@ class USBViewModel(private val context: Context) : ViewModel() {
         }
     }
 
-    private fun processAndBatchData(usbData: USBData.DataReceived) {
-        val byteBuffer = ByteBuffer.wrap(usbData.data).order(ByteOrder.LITTLE_ENDIAN)
-        val readings = FloatArray(usbData.data.size / 4) { byteBuffer.getFloat() }
-        val rawData = readings.joinToString(",")
-        val logEntry = "${usbData.timestamp},$rawData\n"
-
-        dataBuffer.add(logEntry)
-    }
-
     private fun startPeriodicLogFlushing() {
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
@@ -235,6 +213,13 @@ class USBViewModel(private val context: Context) : ViewModel() {
                     logBuffer.clear()
                 }
             }
+        }
+    }
+
+    private fun checkFileRotation() {
+        if (fileEntryCount >= maxEntriesPerFile) {
+            currentDataFileName = generateFileName("USB_Data")
+            fileEntryCount = 0
         }
     }
 
@@ -294,10 +279,5 @@ class USBViewModel(private val context: Context) : ViewModel() {
     override fun onCleared() {
         context.unregisterReceiver(usbPermissionReceiver)
         super.onCleared()
-    }
-
-    sealed class USBData {
-        data class DataReceived(val data: ByteArray, val timestamp: String) : USBData()
-        object NoData : USBData()
     }
 }

@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,6 +27,12 @@ class MainActivity : ComponentActivity() {
 
                 val navController = rememberNavController()
                 val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+
+                // Request USB permission once when the app starts
+                LaunchedEffect(Unit) {
+                    usbViewModel.requestUsbPermission(usbManager)
+                }
+
                 NavHost(
                     navController = navController,
                     startDestination = Start
