@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
@@ -39,6 +40,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import android.os.Process
 
 class BLEViewmodel(private val context: Context) : ViewModel() {
 
@@ -53,7 +55,7 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
     private val maxEntriesPerFile = 20000 // Maximum entries per file
 
     private var currentFileName: String = generateFileName()
-    private var fileEntryCount: Int = 0 // Track the number of entries written to the current file
+    private var fileEntryCount: Int = 0 // track the number of entries written to the current file
 
     // State to track incoming data from BLE device
     private val _bleData = MutableStateFlow<BLEData>(BLEData.NoData)
@@ -152,12 +154,17 @@ class BLEViewmodel(private val context: Context) : ViewModel() {
                     .characteristics
                     .first { it.characteristicUuid == UUID.fromString("20a4a273-c214-4c18-b433-329f30ef7275") }
 
-                // Start observing characteristic notifications
-                p.observe(characteristic).collect { data ->
-                    if (_isRecordingScreenActive.value) {
-                        val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
-                        val currentTime = dateFormat.format(Date())
-                        bleDataChannel.trySend(BLEData.DataReceived(data, currentTime))
+                withContext(Dispatchers.IO) {
+                    Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+                    Log.d("BLE Priority", "Thread priority set to THREAD_PRIORITY_AUDIO")
+
+                    p.observe(characteristic).collect { data ->
+                        if (_isRecordingScreenActive.value) {
+                            val currentTime = System.currentTimeMillis()
+                            val formattedTimestamp = dateFormat.format(Date(currentTime))
+                            Log.d("BLE", formattedTimestamp)
+                            bleDataChannel.trySend(BLEData.DataReceived(data, formattedTimestamp))
+                        }
                     }
                 }
 
