@@ -40,15 +40,16 @@ import com.example.sleeponsettracking.ui.theme.SleepOnsetTrackingTheme
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StartScreen(
-    bleViewmodel: BLEViewmodel,
+    bleViewmodel: BLEViewModel,
     onNavigateToRecording: () -> Unit
 ) {
     val connectionState by bleViewmodel.bleState.collectAsState()
+    val MAC_ADRESS = "25:F0:98:AD:57:C7"
 
     Scaffold(
         topBar = { TopAppBar(title = { Box(
-            modifier = Modifier.fillMaxSize(), // Fill the top bar size
-            contentAlignment = Alignment.Center // Center the title
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
             Text("OpenEarableExG EEG Logging", color = Color.White)
         } },
@@ -75,7 +76,7 @@ fun StartScreen(
                 when (connectionState) {
                     is BLEState.Idle -> {
                         Image(
-                            painter = painterResource(id = R.drawable.logo), // Replace with your PNG resource name
+                            painter = painterResource(id = R.drawable.logo),
                             contentDescription = "My PNG Image",
                             modifier =Modifier.size(70.dp),
                             contentScale = ContentScale.Fit
@@ -103,9 +104,8 @@ fun StartScreen(
                     }}
 
 
-                //Connected Button
                 Button(
-                    onClick = { bleViewmodel.startScan("OpenEarable-57C7") },
+                    onClick = { bleViewmodel.startScan(MAC_ADRESS) },
                     Modifier
                         .padding(top = 100.dp)
                         .matchParentSize()

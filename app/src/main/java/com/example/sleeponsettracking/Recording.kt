@@ -16,9 +16,6 @@ import android.provider.MediaStore
 import androidx.compose.foundation.background
 import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -27,14 +24,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import java.io.BufferedWriter
 import java.io.OutputStreamWriter
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
-fun Recording(bleViewmodel: BLEViewmodel) {
+fun Recording(bleViewmodel: BLEViewModel) {
     val context = LocalContext.current
 
     // Observe the bleData state from the ViewModel
@@ -66,41 +58,6 @@ fun Recording(bleViewmodel: BLEViewmodel) {
             }
         }
     }
-
-    /*
-    // Write the Bluetooth data to CSV whenever it's received
-    LaunchedEffect(bleData) {
-
-        if (bleData is BLEData.DataReceived) {
-            val dateFormat =
-                SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) // Timestamp format
-            // Unpack the BLE data (assuming it's in ByteArray format)
-            val byteBuffer = ByteBuffer.wrap((bleData as BLEData.DataReceived).data)
-                .order(ByteOrder.LITTLE_ENDIAN)
-            val readings = FloatArray(5) { byteBuffer.getFloat() } // Assuming 5 float values
-            val currentTimestamp = Date() // Current time for the notification
-
-
-            // Calculate the timestamp for each reading
-
-
-            // Convert the data to µV
-            val rawData = readings.joinToString(",")
-
-            // Format the timestamp for logging
-            val formattedTimestamp = dateFormat.format(currentTimestamp)
-
-            // Create a log entry in CSV format: "timestamp, raw_data, filtered_data"
-            val logEntry = "$formattedTimestamp,$rawData\n"
-            Log.d("fuck", logEntry)
-            // Use the logToCsv function to append the data to a CSV file
-            logToCsv(context, "OpenEarableEEG_BLE.csv", logEntry)
-
-
-        }
-    }
-    *
-     */
 
     Box(
         contentAlignment = Alignment.Center,

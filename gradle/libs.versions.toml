@@ -14,6 +14,8 @@ composeBom = "2024.04.01"
 navigationCompose = "2.8.1"
 runtimeLivedata = "1.7.3"
 composeMaterial = "1.4.0"
+nordic-ble = "2.9.0"
+
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -35,6 +37,9 @@ androidx-runtime-livedata = { group = "androidx.compose.runtime", name = "runtim
 kable-core = { module = "com.juul.kable:kable-core", version.ref = "kableCore" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutinesCore" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
+nordic-ble-core = { group = "no.nordicsemi.android", name = "ble", version.ref = "nordic-ble" }
+nordic-ble-ktx = { group = "no.nordicsemi.android", name = "ble-ktx", version.ref = "nordic-ble" }
+nordic-ble-livedata = { group = "no.nordicsemi.android", name = "ble-livedata", version.ref = "nordic-ble" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

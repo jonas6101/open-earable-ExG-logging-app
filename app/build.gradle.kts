@@ -72,4 +72,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.kable.core)
     implementation(libs.kotlinx.coroutines.core)
+    implementation (libs.nordic.ble.core)
+    implementation (libs.nordic.ble.ktx)
 }

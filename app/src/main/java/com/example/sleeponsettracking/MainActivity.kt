@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             SleepOnsetTrackingTheme {
                 val context = LocalContext.current
-                val bleViewmodel = BLEViewmodel(context)
+                val bleViewmodel = BLEViewModel(context)
                 val navController = rememberNavController()
 
                 NavHost(
